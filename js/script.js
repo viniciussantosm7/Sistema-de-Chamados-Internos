@@ -38,8 +38,8 @@ function showConfirm(msg, callback) {
 
 function ensureAdmin() {
     const users = load(LS_USERS);
-    if(!users.find(u => u.role === "admin")) {
-        users.push({ name: "Administrador", email: "admin@camara.gov", password: "admin123", role: "admin" });
+    if(!users.find(u => u.email === "admin@camara.gov" && u.role === "admin")) {
+        users.push({ name: "Administrador Padrão", email: "admin@camara.gov", password: "admin123", role: "admin" });
         save(LS_USERS, users);
     }
 }
@@ -197,16 +197,31 @@ function renderWelcome() {
     $("#irChamados").onclick = renderApp;
 }
 
+let currentFilter = localStorage.getItem('currentFilter') || 'Todos';
+
 function renderApp() {
     const user = currentUser();
     if(!user) return renderRoleSelect();
     const tickets = load(LS_TICKETS);
-    const userTickets = user.role === "admin" ? tickets : tickets.filter(t => t.user === user.name);
-
-    const statusAbertoID = normalizeStatus("Aberto").replace(/\s/g, ''); 
-    const statusAndamentoID = normalizeStatus("Em andamento").replace(/\s/g, ''); 
-    const statusConcluidoID = normalizeStatus("Concluído").replace(/\s/g, ''); 
-
+    let userTickets = user.role === "admin" ? tickets : tickets.filter(t => t.user === user.name);
+    
+    if (user.role === "admin" && currentFilter !== 'Todos') {
+        const normalizedFilter = normalizeStatus(currentFilter);
+        userTickets = userTickets.filter(t => normalizeStatus(t.status) === normalizedFilter);
+    }
+    
+    const filterSelect = user.role === "admin" ? `
+        <div style="margin-bottom: 15px;">
+            <label for="statusFilter">Filtrar por Status:</label>
+            <select id="statusFilter" style="width: 200px; display: inline-block; margin-left: 10px;">
+                <option value="Todos">Todos</option>
+                <option value="Aberto">Em Aberto</option>
+                <option value="Em andamento">Em Andamento</option>
+                <option value="Concluído">Concluído</option>
+            </select>
+        </div>
+    ` : '';
+    
     $("#app").innerHTML = `
         <section class="card">
             <h2>Abrir Chamado</h2>
@@ -222,11 +237,22 @@ function renderApp() {
         </section>
         <section class="card">
             <h2>Chamados</h2>
-            <div id="lista-${statusAbertoID}"></div> 
-            <div id="lista-${statusAndamentoID}"></div>
-            <div id="lista-${statusConcluidoID}"></div>
+            ${filterSelect}
+            <div id="listaChamados"></div> 
         </section>
     `;
+
+    if (user.role === "admin") {
+        const filterEl = $("#statusFilter");
+        if (filterEl) {
+            filterEl.value = currentFilter;
+            filterEl.onchange = (e) => {
+                currentFilter = e.target.value;
+                localStorage.setItem('currentFilter', currentFilter);
+                renderApp();
+            };
+        }
+    }
 
     $("#abrir").onclick = () => {
         const setor = $("#setor").value.trim();
@@ -241,18 +267,20 @@ function renderApp() {
         renderApp();
     };
 
-    ["Aberto","Em andamento","Concluído"].forEach(status => {
-        const statusNormalizado = normalizeStatus(status);
-        const idStatus = statusNormalizado.replace(/\s/g, '');
+    const container = $("#listaChamados");
+    const statusesToShow = ["Aberto","Em andamento","Concluído"];
+    
+    if (userTickets.length === 0) {
+        container.innerHTML = "<p>Nenhum chamado encontrado.</p>";
+        return;
+    }
 
-        const container = $(`#lista-${idStatus}`);
+    statusesToShow.forEach(status => {
+        const statusNormalizado = normalizeStatus(status);
         const list = userTickets.filter(t => normalizeStatus(t.status) === statusNormalizado);
 
-        container.innerHTML = `<h3>${status}</h3>`; 
-
-        if(list.length === 0) { 
-            container.innerHTML += "<p>Nenhum chamado.</p>"; 
-            return; 
+        if (list.length > 0) {
+            container.innerHTML += `<h3>${status}</h3>`;
         }
 
         list.forEach(t => {
@@ -280,6 +308,19 @@ function renderApp() {
                     showMessage("Status atualizado!", "success");
                 };
                 div.appendChild(sel);
+
+                const deleteBtn = document.createElement("button");
+                deleteBtn.textContent = "Excluir Chamado";
+                deleteBtn.style.marginLeft = "10px";
+                deleteBtn.onclick = () => showConfirm("Deseja excluir este chamado?", ok => {
+                    if(ok) {
+                        const all = load(LS_TICKETS).filter(x => x.id !== t.id);
+                        save(LS_TICKETS, all);
+                        renderApp();
+                        showMessage("Chamado excluído.", "success");
+                    }
+                });
+                div.appendChild(deleteBtn);
             } else {
                 const btn = document.createElement("button");
                 btn.textContent = "Excluir";
@@ -331,7 +372,8 @@ function renderFeedback() {
         const anon = $("#anonimo").checked;
         if(rating==0 && text==="") return showMessage("Escolha uma nota ou escreva algo.", "error");
         const all = load(LS_FEEDBACKS);
-        all.push({ rating, text, user: anon ? "Anônimo" : user.name, date: new Date().toLocaleString("pt-BR") });
+
+        all.push({ id: Date.now(), rating, text, user: anon ? "Anônimo" : user.name, date: new Date().toLocaleString("pt-BR") });
         save(LS_FEEDBACKS, all);
         showMessage("Feedback enviado!", "success");
         renderApp();
@@ -363,6 +405,20 @@ function renderFeedbacksAdmin() {
         div.innerHTML = `<h4>${f.user}</h4><div class="date">${f.date}</div>
                          <div class="stars">${"★".repeat(f.rating)}${"☆".repeat(5-f.rating)}</div>
                          <p>${f.text || "<i>Sem comentário</i>"}</p>`;
+        
+        const deleteBtn = document.createElement("button");
+        deleteBtn.textContent = "Excluir Feedback";
+        deleteBtn.className = "delete-feedback-btn";
+        deleteBtn.onclick = () => showConfirm("Deseja excluir este feedback?", ok => {
+            if(ok) {
+                const all = load(LS_FEEDBACKS).filter(x => x.id !== f.id);
+                save(LS_FEEDBACKS, all);
+                renderFeedbacksAdmin(); 
+                showMessage("Feedback excluído.", "success");
+            }
+        });
+        div.appendChild(deleteBtn);
+
         list.appendChild(div);
     });
 }
