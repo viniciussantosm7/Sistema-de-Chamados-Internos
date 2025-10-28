@@ -225,7 +225,11 @@ function renderApp() {
     $("#app").innerHTML = `
         <section class="card">
             <h2>Abrir Chamado</h2>
-            <input id="setor" placeholder="Setor">
+            <select id="local"> <option value="">Local do Chamado</option>
+                <option>Câmara</option>
+                <option>Anexo</option>
+            </select>
+            <input id="setor" placeholder="Setor Específico (Ex: Adminstração)">
             <select id="tipo">
                 <option value="">Tipo</option>
                 <option>TI</option>
@@ -255,11 +259,14 @@ function renderApp() {
     }
 
     $("#abrir").onclick = () => {
+        const local = $("#local").value;
         const setor = $("#setor").value.trim();
         const tipo = $("#tipo").value;
         const desc = $("#desc").value.trim();
-        if(!setor || !tipo || !desc) return showMessage("Preencha todos os campos.", "error");
-        const novo = { id: Date.now(), setor, tipo, desc, status: "Aberto", user: user.name, data: new Date().toLocaleString("pt-BR") };
+        
+        if(!local || !setor || !tipo || !desc) return showMessage("Preencha todos os campos (incluindo o Local).", "error");
+        
+        const novo = { id: Date.now(), local, setor, tipo, desc, status: "Aberto", user: user.name, data: new Date().toLocaleString("pt-BR") };
         const all = load(LS_TICKETS);
         all.unshift(novo);
         save(LS_TICKETS, all);
@@ -288,8 +295,8 @@ function renderApp() {
             div.className = "chamado";
             
             const statusClass = normalizeStatus(t.status).replace(/\s/g, ''); 
-            
-            div.innerHTML = `<strong>${t.tipo}</strong> - ${t.setor}<p>${t.desc}</p>
+
+            div.innerHTML = `<strong>${t.tipo}</strong> - ${t.setor} (${t.local})<p>${t.desc}</p>
                              <span class="status ${statusClass}">${t.status}</span><br>
                              <small>Abertura: ${t.data}</small><br>
                              <small>Usuário: ${t.user}</small><br>`;
@@ -372,7 +379,6 @@ function renderFeedback() {
         const anon = $("#anonimo").checked;
         if(rating==0 && text==="") return showMessage("Escolha uma nota ou escreva algo.", "error");
         const all = load(LS_FEEDBACKS);
-
         all.push({ id: Date.now(), rating, text, user: anon ? "Anônimo" : user.name, date: new Date().toLocaleString("pt-BR") });
         save(LS_FEEDBACKS, all);
         showMessage("Feedback enviado!", "success");
